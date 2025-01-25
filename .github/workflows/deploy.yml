@@ -1,0 +1,45 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  DOCKER_IMAGE: whatsapp-web-clone
+  DOCKER_CONTAINER: whatsapp-web-clone-container
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Install sshpass
+        run: sudo apt-get install -y sshpass
+
+      - name: Copy project files to VPS
+        run: |
+          export SSHPASS=${{ secrets.ROOT_PASSWORD }}
+          sshpass -e rsync -avz -e "ssh -o StrictHostKeyChecking=no" \
+            --exclude '.git' \
+            --exclude 'node_modules' \
+            --exclude 'dist' \
+            ./ root@${{ secrets.VPS_HOST }}:/root/whatsapp-web-clone/
+
+      - name: Build and deploy on VPS
+        run: |
+          export SSHPASS=${{ secrets.ROOT_PASSWORD }}
+          sshpass -e ssh -o StrictHostKeyChecking=no root@${{ secrets.VPS_HOST }} "\
+            cd /root/whatsapp-web-clone && \
+            docker build -t ${{ env.DOCKER_IMAGE }}:latest . && \
+            docker stop ${{ env.DOCKER_CONTAINER }} || true && \
+            docker rm ${{ env.DOCKER_CONTAINER }} || true && \
+            docker run -d \
+              --name ${{ env.DOCKER_CONTAINER }} \
+              -p 80:80 \
+              --restart unless-stopped \
+              ${{ env.DOCKER_IMAGE }}:latest && \
+            docker image prune -f"
